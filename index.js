@@ -18,13 +18,16 @@ function Frame(state, index, keys, length, nonempty, depth) {
 }
 
 function stringify(value, replacer, space, cb) {
-  if (typeof replacer === 'function') {
-    cb = replacer;
-    space = null;
-    replacer = null;
-  } else if (typeof space === 'function') {
-    cb = space;
-    space = null;
+  switch (arguments.length) {
+    case 3:
+      cb = space;
+      space = null;
+      break;
+    case 2:
+      cb = replacer;
+      space = null;
+      replacer = null;
+      break;
   }
 
   let state = VALUE;
@@ -40,17 +43,28 @@ function stringify(value, replacer, space, cb) {
   let json = '';
   let ops = 0;
 
-  const prettyPrint = (
-    (typeof space === 'string' && space.length >= 1) ||
-    (typeof space === 'number' && space >= 1)
-  );
+  let hasReplacer = false;
+  if (Array.isArray(replacer)) {
+    hasReplacer = true;
+    const keysToKeep = replacer;
+    replacer = function arrayReplacer(key, value) {
+      if (key === '' || keysToKeep.indexOf(key) >= 0) {
+        return value;
+      }
+    };
+  } else if (typeof replacer === 'function') {
+    hasReplacer = true;
+  }
 
   const indents = [''];
+  let prettyPrint = false;
   if (typeof space === 'string') {
+    prettyPrint = true;
     if (space.length > 10) {
       space = space.slice(0, 10);
     }
   } if (typeof space === 'number') {
+    prettyPrint = true;
     space = ' '.repeat(space > 10 ? 10 : space);
   }
 
@@ -99,6 +113,10 @@ function stringify(value, replacer, space, cb) {
             value = value.toJSON();
           }
 
+          if (hasReplacer) {
+            value = replacer('', value);
+          }
+
           if (value === undefined) {
             state = NEXT;
             break;
@@ -140,10 +158,16 @@ function stringify(value, replacer, space, cb) {
             break;
           }
 
-          let item = value[index++];
+          let item = value[index];
           if (item != null && typeof item.toJSON === 'function') {
             item = item.toJSON();
           }
+
+          if (hasReplacer) {
+            item = replacer(index, item);
+          }
+
+          index += 1;
 
           if (nonempty) {
             json += ',';
@@ -200,12 +224,18 @@ function stringify(value, replacer, space, cb) {
             break;
           }
 
-          const key = keys[index++];
+          const key = keys[index];
 
           let item = value[key];
           if (item != null && typeof item.toJSON === 'function') {
             item = item.toJSON();
           }
+
+          if (hasReplacer) {
+            item = replacer(key, item);
+          }
+
+          index += 1;
 
           if (item === undefined) {
             break;

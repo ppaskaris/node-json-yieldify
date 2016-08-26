@@ -68,7 +68,7 @@ describe('mimics native stringify', () => {
     });
   });
 
-  it('indent at most 10 spaces', (cb) => {
+  it('indents at most 10 spaces', (cb) => {
     JsonYieldify.stringify(complexObject, null, 12, (err, json) => {
       expect(err).to.not.exist;
       expect(json).to.equal(JSON.stringify(complexObject, null, 12));
@@ -84,10 +84,36 @@ describe('mimics native stringify', () => {
     });
   });
 
-  it('indent at most 10 characters', (cb) => {
-    JsonYieldify.stringify(complexObject, null, 'pasghettipasghettipasghetti', (err, json) => {
+  const BIGSTR = 'pasghettipasghetti';
+
+  it('indents at most 10 characters', (cb) => {
+    JsonYieldify.stringify(complexObject, null, BIGSTR, (err, json) => {
       expect(err).to.not.exist;
-      expect(json).to.equal(JSON.stringify(complexObject, null, 'pasghettipasghettipasghetti'));
+      expect(json).to.equal(JSON.stringify(complexObject, null, BIGSTR));
+      cb();
+    });
+  });
+
+  function replacer(key, value) {
+    if (typeof value !== 'object') {
+      return `greetings:${key},${value}`;
+    } else {
+      return value;
+    }
+  }
+
+  it('supports replacer functiopn', (cb) => {
+    JsonYieldify.stringify(complexObject, replacer, 2, (err, json) => {
+      expect(err).to.not.exist;
+      expect(json).to.equal(JSON.stringify(complexObject, replacer, 2));
+      cb();
+    });
+  });
+
+  it('supports replacer array', (cb) => {
+    JsonYieldify.stringify(complexObject, ['greetings', 'other'], 2, (err, json) => {
+      expect(err).to.not.exist;
+      expect(json).to.equal(JSON.stringify(complexObject, ['greetings', 'other'], 2));
       cb();
     });
   });
