@@ -14,7 +14,7 @@
     "yield"
   ],
   "author": "Patrick Paskaris <patrick@paskaris.gr>",
-  "license": "GPL-3.0",
+  "license": "MIT",
   "devDependencies": {
     "async": "^2.0.1",
     "chai": "^3.5.0",
