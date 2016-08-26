@@ -46,6 +46,52 @@ describe('mimics native stringify', () => {
     testAll([{}, { a: 42 }, { a: 'greetings', b: undefined, c: 42 }], cb);
   });
 
+  const complexObject = {
+    array: [1, 2, 3],
+    string: 'greetings',
+    number: 42,
+    goofyNumbers: [0, -0, Infinity, -Infinity, NaN, 9e-56],
+    other: {
+      date: new Date(),
+      nullValue: null,
+      undefinedValue: undefined,
+      arrayWithNullValue: [1, null, 3],
+      arrayWithUndefinedValue: [1, undefined, 3]
+    }
+  };
+
+  it('supports indent with spaces', (cb) => {
+    JsonYieldify.stringify(complexObject, null, 2, (err, json) => {
+      expect(err).to.not.exist;
+      expect(json).to.equal(JSON.stringify(complexObject, null, 2));
+      cb();
+    });
+  });
+
+  it('indent at most 10 spaces', (cb) => {
+    JsonYieldify.stringify(complexObject, null, 12, (err, json) => {
+      expect(err).to.not.exist;
+      expect(json).to.equal(JSON.stringify(complexObject, null, 12));
+      cb();
+    });
+  });
+
+  it('supports indent with string', (cb) => {
+    JsonYieldify.stringify(complexObject, null, '\t', (err, json) => {
+      expect(err).to.not.exist;
+      expect(json).to.equal(JSON.stringify(complexObject, null, '\t'));
+      cb();
+    });
+  });
+
+  it('indent at most 10 characters', (cb) => {
+    JsonYieldify.stringify(complexObject, null, 'pasghettipasghettipasghetti', (err, json) => {
+      expect(err).to.not.exist;
+      expect(json).to.equal(JSON.stringify(complexObject, null, 'pasghettipasghettipasghetti'));
+      cb();
+    });
+  });
+
 });
 
 describe('yields to io', () => {

@@ -8,29 +8,31 @@ const OBJECT = 0x3;
 const NO_KEYS = [];
 const MAX_SEQUENTIAL_OPS = 2500;
 
-function Frame(state, index, keys, length, comma) {
+function Frame(state, index, keys, length, nonempty, depth) {
   this.state = state;
   this.index = index;
   this.keys = keys;
   this.length = length;
-  this.comma = comma;
+  this.nonempty = nonempty;
+  this.depth = depth;
 }
 
-function stringify(value, replacer, indent, cb) {
+function stringify(value, replacer, space, cb) {
   if (typeof replacer === 'function') {
     cb = replacer;
-    indent = null;
+    space = null;
     replacer = null;
-  } else if (typeof indent === 'function') {
-    cb = indent;
-    indent = null;
+  } else if (typeof space === 'function') {
+    cb = space;
+    space = null;
   }
 
   let state = VALUE;
   let index = 0;
   let keys = NO_KEYS;
   let length = 0;
-  let comma = false;
+  let nonempty = false;
+  let depth = 0;
 
   const frames = [];
   const values = [];
@@ -38,8 +40,47 @@ function stringify(value, replacer, indent, cb) {
   let json = '';
   let ops = 0;
 
+  const prettyPrint = (
+    (typeof space === 'string' && space.length >= 1) ||
+    (typeof space === 'number' && space >= 1)
+  );
+
+  const indents = [''];
+  if (typeof space === 'string') {
+    if (space.length > 10) {
+      space = space.slice(0, 10);
+    }
+  } if (typeof space === 'number') {
+    space = ' '.repeat(space > 10 ? 10 : space);
+  }
+
+  function indent() {
+    if (depth >= indents.length) {
+      for (let i = indents.length - 1; i <= depth; ++i) {
+        indents.push(indents[i] + space);
+      }
+    }
+    return indents[depth];
+  }
+
   function done() {
     cb(null, json.length > 0 ? json : undefined);
+  }
+
+  function save() {
+    frames.push(new Frame(state, index, keys, length, nonempty, depth));
+    values.push(value);
+  }
+
+  function restore() {
+    const frame = frames.pop();
+    state = frame.state;
+    index = frame.index;
+    keys = frame.keys;
+    length = frame.length;
+    nonempty = frame.nonempty;
+    depth = frame.depth;
+    value = values.pop();
   }
 
   function resume() {
@@ -50,16 +91,7 @@ function stringify(value, replacer, indent, cb) {
             done();
             return;
           }
-
-          const frame = frames.pop();
-          state = frame.state;
-          index = frame.index;
-          keys = frame.keys;
-          length = frame.length;
-          comma = frame.comma;
-
-          value = values.pop();
-
+          restore();
           break;
         }
         case VALUE: {
@@ -83,7 +115,8 @@ function stringify(value, replacer, indent, cb) {
             state = ARRAY;
             index = 0;
             length = value.length;
-            comma = false;
+            nonempty = false;
+            depth = depth + 1;
             break;
           }
 
@@ -92,13 +125,18 @@ function stringify(value, replacer, indent, cb) {
           index = 0;
           keys = Object.keys(value);
           length = keys.length;
-          comma = false;
+          nonempty = false;
+          depth = depth + 1;
           break;
         }
         case ARRAY: {
           if (index >= length) {
-            json += ']';
             state = NEXT;
+            depth = depth - 1;
+            if (prettyPrint && nonempty) {
+              json += '\n' + indent();
+            }
+            json += ']';
             break;
           }
 
@@ -107,10 +145,14 @@ function stringify(value, replacer, indent, cb) {
             item = item.toJSON();
           }
 
-          if (comma) {
+          if (nonempty) {
             json += ',';
           } else {
-            comma = true;
+            nonempty = true;
+          }
+
+          if (prettyPrint) {
+            json += '\n' + indent();
           }
 
           if (item === undefined) {
@@ -123,8 +165,7 @@ function stringify(value, replacer, indent, cb) {
             break;
           }
 
-          frames.push(new Frame(state, index, keys, length, comma));
-          values.push(value);
+          save();
 
           if (Array.isArray(item)) {
             json += '[';
@@ -132,7 +173,8 @@ function stringify(value, replacer, indent, cb) {
             index = 0;
             length = item.length;
             value = item;
-            comma = false;
+            nonempty = false;
+            depth = depth + 1;
             break;
           }
 
@@ -142,14 +184,19 @@ function stringify(value, replacer, indent, cb) {
           keys = Object.keys(item);
           length = keys.length;
           value = item;
-          comma = false;
+          nonempty = false;
+          depth = depth + 1;
           break;
         }
         case OBJECT: {
           if (index >= length) {
-            json += '}';
             state = NEXT;
             keys = NO_KEYS;
+            depth = depth - 1;
+            if (prettyPrint && nonempty) {
+              json += '\n' + indent();
+            }
+            json += '}';
             break;
           }
 
@@ -164,21 +211,28 @@ function stringify(value, replacer, indent, cb) {
             break;
           }
 
-          if (comma) {
+          if (nonempty) {
             json += ',';
           } else {
-            comma = true;
+            nonempty = true;
+          }
+
+          if (prettyPrint) {
+            json += '\n' + indent();
           }
 
           json += JSON.stringify(key) + ':';
+
+          if (prettyPrint) {
+            json += ' ';
+          }
 
           if (item === null || typeof item !== 'object') {
             json += JSON.stringify(item);
             break;
           }
 
-          frames.push(new Frame(state, index, keys, length, comma));
-          values.push(value);
+          save();
 
           if (Array.isArray(item)) {
             json += '[';
@@ -186,7 +240,8 @@ function stringify(value, replacer, indent, cb) {
             index = 0;
             length = item.length;
             value = item;
-            comma = false;
+            nonempty = false;
+            depth = depth + 1;
             break;
           }
 
@@ -196,7 +251,8 @@ function stringify(value, replacer, indent, cb) {
           keys = Object.keys(item);
           length = keys.length;
           value = item;
-          comma = false;
+          nonempty = false;
+          depth = depth + 1;
           break;
         }
       }
