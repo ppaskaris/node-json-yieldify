@@ -1,0 +1,23 @@
+{
+  "name": "json-yieldify",
+  "version": "1.0.0",
+  "description": "a stack-based async JSON.stringify that yields for I/O periodically",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha test"
+  },
+  "keywords": [
+    "async",
+    "json",
+    "non-blocking",
+    "stringify",
+    "yield"
+  ],
+  "author": "Patrick Paskaris <patrick@paskaris.gr>",
+  "license": "GPL-3.0",
+  "devDependencies": {
+    "async": "^2.0.1",
+    "chai": "^3.5.0",
+    "mocha": "^3.0.2"
+  }
+}
