@@ -182,18 +182,18 @@ describe('asynchrony', () => {
 
   it('handles enormous arrays', (cb) => {
     const array = [];
-    for (let i = 0; i < 250000; ++i) {
+    for (let i = 0; i < 25000; ++i) {
       array[i] = new TestValue();
     }
-    test(array, 100, cb);
+    test(array, 10, cb);
   });
 
   it('handles enormous objects', (cb) => {
     const object = {};
-    for (let i = 0; i < 250000; ++i) {
+    for (let i = 0; i < 25000; ++i) {
       object[`key:${i}:${gibberish()}`] = new TestValue();
     }
-    test(object, 100, cb);
+    test(object, 10, cb);
   });
 
   it('handles goofy nested values', (cb) => {

@@ -1,6 +1,6 @@
 'use strict';
 
-const MAX_SEQUENTIAL_OPS = 2500;
+const MAX_SEQUENTIAL_OPS = 250;
 
 const NEXT = 0x0;
 const VALUE = 0x1;
@@ -30,10 +30,6 @@ function stringifyimpl(key, holder, replacerFunction, propertyList, gap, cb) {
   let json = '';
   let ops = 0;
 
-  function done() {
-    cb(null, json);
-  }
-
   function save() {
     frames.push([key, holder, state, index, keys, length, nonempty, indent]);
   }
@@ -55,7 +51,7 @@ function stringifyimpl(key, holder, replacerFunction, propertyList, gap, cb) {
       switch (state) {
         case NEXT: {
           if (!frames.length) {
-            done();
+            cb(null, json);
             return;
           }
           restore();
@@ -258,6 +254,27 @@ function stringifyimpl(key, holder, replacerFunction, propertyList, gap, cb) {
   process.nextTick(resume);
 }
 
+/**
+ * Asynchronously converts a JavaScript value to a JSON string, optionally
+ * replacing values if a replacer function is specified, or optionally including
+ * only the specified properties if a replacer array is specified.
+ *
+ * @param {Any} value The value to convert to a JSON string.
+ * @param {(Function|String[])=} replacer A function that alters the behavior of
+ * the stringification process, or an array of String and Number objects that
+ * serve as a whitelist for selecting the properties of the value object to be
+ * included in the JSON string. If this value is null or not provided, all
+ * properties of the object are included in the resulting JSON string.
+ * @param {(Number|String)=} space A String or Number object that's used to
+ * insert white space into the output JSON string for readability purposes. If
+ * this is a Number, it indicates the number of space characters to use as white
+ * space; this number is capped at 10 if it's larger than that. Values less than
+ * 1 indicate that no space should be used. If this is a String, the string (or
+ * the first 10 characters of the string, if it's longer than that) is used as
+ * white space. If this parameter is not provided (or is null), no white space
+ * is used.
+ * @param {Function} cb Node-style callback.
+ */
 function stringify(value, replacer, space, cb) {
   switch (arguments.length) {
     case 3:

@@ -1,7 +1,15 @@
 {
   "name": "json-yieldify",
   "version": "1.0.0",
-  "description": "a stack-based async JSON.stringify that yields for I/O periodically",
+  "description": "an async JSON.stringify that yields periodically to the event loop",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ppaskaris/node-json-yieldify.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ppaskaris/node-json-yieldify/issues"
+  },
+  "homepage": "https://github.com/ppaskaris/node-json-yieldify#readme",
   "main": "index.js",
   "scripts": {
     "test": "mocha test"
@@ -9,7 +17,6 @@
   "keywords": [
     "async",
     "json",
-    "non-blocking",
     "stringify",
     "yield"
   ],
