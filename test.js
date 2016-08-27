@@ -4,6 +4,17 @@ const Async = require('async');
 const expect = require('chai').expect;
 const JsonYieldify = require('./index');
 
+const FACTOR = Math.pow(2, 31) - 1;
+
+function gibberish() {
+  return (
+    ((Math.random() * FACTOR) << 0).toString(16) +
+    ((Math.random() * FACTOR) << 0).toString(16) +
+    ((Math.random() * FACTOR) << 0).toString(16) +
+    ((Math.random() * FACTOR) << 0).toString(16)
+  );
+}
+
 describe('native parity', () => {
 
   function test(value, cb) {
@@ -50,6 +61,15 @@ describe('native parity', () => {
     testAll([{}, { a: 42 }, { a: 'greetings', b: undefined, c: 42 }], cb);
   });
 
+  function Greetings(message) {
+    this.message = message;
+    this.shout = message.toUpperCase() + '!';
+  }
+
+  it('handles constructors', (cb) => {
+    test(new Greetings('hello'), cb);
+  });
+
   const complexObject = {
     array: [1, 2, 3],
     string: 'greetings',
@@ -63,6 +83,24 @@ describe('native parity', () => {
       arrayWithUndefinedValue: [1, undefined, 3]
     }
   };
+
+  const complexArray = [
+    [new Number(1), new String('hello'), new Boolean(56), new Date()],
+    'greetings',
+    42,
+    [0, -0, Infinity, -Infinity, NaN, 9e-56],
+    {
+      date: new Date(),
+      nullValue: null,
+      undefinedValue: undefined,
+      arrayWithNullValue: [1, null, 3],
+      arrayWithUndefinedValue: [1, undefined, 3]
+    }
+  ];
+
+  it('supports complex values', (cb) => {
+    testAll([complexObject, complexArray], cb);
+  });
 
   it('supports indent with spaces', (cb) => {
     JsonYieldify.stringify(complexObject, null, 2, (err, json) => {
@@ -124,22 +162,18 @@ describe('native parity', () => {
     });
   });
 
+  it('handles buffer objects', (cb) => {
+    const buffer = new Buffer(4096);
+    buffer.fill(gibberish());
+    test(buffer, cb);
+  });
+
 });
 
 describe('asynchrony', () => {
 
   let tag = 0;
   let inProgress = false;
-  const FACTOR = Math.pow(2, 31) - 1;
-
-  function gibberish() {
-    return (
-      ((Math.random() * FACTOR) << 0).toString(16) +
-      ((Math.random() * FACTOR) << 0).toString(16) +
-      ((Math.random() * FACTOR) << 0).toString(16) +
-      ((Math.random() * FACTOR) << 0).toString(16)
-    );
-  }
 
   class TestValue {
     constructor() {
@@ -221,6 +255,7 @@ describe('asynchrony', () => {
     }
     test(goofyArray(factory), 10, cb);
   });
+
 });
 
 describe('edge cases', () => {
@@ -232,7 +267,10 @@ describe('edge cases', () => {
     obj.object = { a: 1, b: obj, c: 3 };
     JsonYieldify.stringify(obj, (err, json) => {
       expect(err).to.not.exist;
-      expect(json).to.equal('{"value":"[Circular]","array":[1,"[Circular]",3],"object":{"a":1,"b":"[Circular]","c":3}}');
+      expect(json).to.equal(
+        '{"value":"[Circular]","array":[1,"[Circular]",3]'
+        + ',"object":{"a":1,"b":"[Circular]","c":3}}'
+      );
       cb();
     });
   });
