@@ -4,7 +4,7 @@ const Async = require('async');
 const expect = require('chai').expect;
 const JsonYieldify = require('./index');
 
-describe('mimics native stringify', () => {
+describe('native parity', () => {
 
   function test(value, cb) {
     JsonYieldify.stringify(value, (err, json) => {
@@ -27,11 +27,15 @@ describe('mimics native stringify', () => {
   });
 
   it('handles strings', (cb) => {
-    testAll(['', 'greetings', '\0', '\n'], cb);
+    testAll(['', 'greetings', '\0', '\n', new String('hello')], cb);
   });
 
   it('handles numbers', (cb) => {
-    testAll([0, 42, -0, 6e40, -10e-20, Infinity, -Infinity, NaN], cb);
+    testAll([0, 42, -0, 6e40, Infinity, -Infinity, NaN, new Number(56)], cb);
+  });
+
+  it('handles booleans', (cb) => {
+    testAll([true, false, new Boolean(true)], cb);
   });
 
   it('handles dates', (cb) => {
@@ -103,24 +107,26 @@ describe('mimics native stringify', () => {
   }
 
   it('supports replacer functiopn', (cb) => {
-    JsonYieldify.stringify(complexObject, replacer, 2, (err, json) => {
+    JsonYieldify.stringify(complexObject, replacer, (err, json) => {
       expect(err).to.not.exist;
-      expect(json).to.equal(JSON.stringify(complexObject, replacer, 2));
+      expect(json).to.equal(JSON.stringify(complexObject, replacer));
       cb();
     });
   });
 
+  const PROPS = ['greetings', 'other'];
+
   it('supports replacer array', (cb) => {
-    JsonYieldify.stringify(complexObject, ['greetings', 'other'], 2, (err, json) => {
+    JsonYieldify.stringify(complexObject, PROPS, (err, json) => {
       expect(err).to.not.exist;
-      expect(json).to.equal(JSON.stringify(complexObject, ['greetings', 'other'], 2));
+      expect(json).to.equal(JSON.stringify(complexObject, PROPS));
       cb();
     });
   });
 
 });
 
-describe('yields to io', () => {
+describe('asynchrony', () => {
 
   let tag = 0;
   let inProgress = false;
@@ -215,4 +221,20 @@ describe('yields to io', () => {
     }
     test(goofyArray(factory), 10, cb);
   });
+});
+
+describe('edge cases', () => {
+
+  it('handles circular objects', (cb) => {
+    const obj = {};
+    obj.value = obj;
+    obj.array = [1, obj, 3];
+    obj.object = { a: 1, b: obj, c: 3 };
+    JsonYieldify.stringify(obj, (err, json) => {
+      expect(err).to.not.exist;
+      expect(json).to.equal('{"value":"[Circular]","array":[1,"[Circular]",3],"object":{"a":1,"b":"[Circular]","c":3}}');
+      cb();
+    });
+  });
+
 });
