@@ -1,86 +1,45 @@
 'use strict';
 
-var MAX_SEQUENTIAL_OPS = 250;
-
-var NEXT = 0x0;
-var VALUE = 0x1;
-var OBJECT = 0x2;
-var ARRAY = 0x3;
-
 function stringifyimpl(key, holder, replacerFunction, propertyList, gap, cb) {
-  var indent = 0;
+  var indent = '';
   var index = 0;
   var keys = [];
   var length = 0;
   var nonempty = false;
-  var state = VALUE;
+  var state = 0x00;
 
-  var stack = new Array(64);
+  var stack = [];
   var stackptr = 0;
 
-  var circulararray = [];
-  var circularset = new Set();
+  var circularset = new WeakSet();
 
   var pretty = gap.length > 0;
-
-  var indents;
-  var indentsptr = 0;
-
-  if (pretty) {
-    indents = new Array(16);
-    indents[0] = '';
-  }
-
   var objectdelim = pretty ? ': ' : ':';
+
+  var depth = 0;
+  var indents = [''];
+  var indentsptr = 0;
 
   var json = '';
   var ops = 0;
 
-  function save() {
-    stack[stackptr++] = holder;
-    stack[stackptr++] = indent;
-    stack[stackptr++] = index;
-    stack[stackptr++] = key;
-    stack[stackptr++] = keys;
-    stack[stackptr++] = length;
-    stack[stackptr++] = nonempty;
-    stack[stackptr++] = state;
-  }
-
-  function restore() {
-    state = stack[--stackptr];
-    nonempty = stack[--stackptr];
-    length = stack[--stackptr];
-    keys = stack[--stackptr];
-    key = stack[--stackptr];
-    index = stack[--stackptr];
-    indent = stack[--stackptr];
-    holder = stack[--stackptr];
-  }
-
-  function checkindent() {
-    if (indent > indentsptr) {
+  function pushgap() {
+    if (++depth > indentsptr) {
       indentsptr += 1;
       indents[indentsptr] = indents[indentsptr - 1] + gap;
     }
+    indent = indents[depth];
+  }
+
+  function popgap() {
+    indent = indents[--depth];
   }
 
   function resume() {
     var value;
-    var isObject;
-    var isArray;
     for (; ;) {
       switch (state) {
-        case NEXT: {
-          if (stackptr <= 0) {
-            cb(null, json);
-            return;
-          }
-          restore();
-          break;
-        }
-        case VALUE:
-          state = NEXT;
+        case 0x00:
           value = holder[key];
           if (value != null && typeof value.toJSON === 'function') {
             value = value.toJSON(key);
@@ -90,61 +49,67 @@ function stringifyimpl(key, holder, replacerFunction, propertyList, gap, cb) {
           }
           if (value === undefined) {
             json = undefined;
-            break;
-          }
-          if (value === null) {
+            state = 0x01;
+          } else if (value === null) {
             json += 'null';
-            break;
-          }
-          isArray = value.constructor === Array;
-          if (isArray) {
-            save();
-            circulararray.push(value);
+            state = 0x01;
+          } else if (Array.isArray(value)) {
             circularset.add(value);
             holder = value;
-            indent += 1;
             index = 0;
             length = value.length;
             nonempty = false;
-            state = ARRAY;
+            state = 0x03;
             json += '[';
             if (pretty) {
-              checkindent();
+              pushgap();
             }
-            break;
-          }
-          isObject = typeof value === 'object';
-          if (isObject) {
-            save();
-            circulararray.push(value);
+          } else if (typeof value === 'object') {
             circularset.add(value);
             holder = value;
-            indent += 1;
             index = 0;
             keys = propertyList || Object.keys(value);
             length = keys.length;
             nonempty = false;
-            state = OBJECT;
+            state = 0x02;
             json += '{';
             if (pretty) {
-              checkindent();
+              pushgap();
             }
-            break;
+          } else {
+            json += JSON.stringify(value);
+            state = 0x01;
           }
-          json += JSON.stringify(value);
           break;
-        case OBJECT:
+        case 0x01: {
+          if (stackptr <= 0) {
+            cb(null, json);
+            return;
+          }
+          state = stack[--stackptr];
+          nonempty = stack[--stackptr];
+          length = stack[--stackptr];
+          keys = stack[--stackptr];
+          key = stack[--stackptr];
+          index = stack[--stackptr];
+          holder = stack[--stackptr];
+          break;
+        }
+        case 0x02:
           if (index >= length) {
-            circularset.delete(circulararray.pop());
-            indent = indent - 1;
-            if (pretty && nonempty) {
-              json += '\n' + indents[indent];
+            circularset.delete(value);
+            if (pretty) {
+              popgap();
+              if (nonempty) {
+                json += '\n' + indent;
+              }
             }
             json += '}';
-            state = NEXT;
+            state = 0x01;
             break;
           }
-          value = holder[key = keys[index++]];
+          key = keys[index++];
+          value = holder[key];
           if (value != null && typeof value.toJSON === 'function') {
             value = value.toJSON(key);
           }
@@ -160,75 +125,72 @@ function stringifyimpl(key, holder, replacerFunction, propertyList, gap, cb) {
             nonempty = true;
           }
           if (pretty) {
-            json += '\n' + indents[indent];
+            json += '\n' + indent;
           }
           json += JSON.stringify(key) + objectdelim;
           if (value === null) {
             json += 'null';
-            break;
-          }
-          isArray = value.constructor === Array;
-          if (isArray) {
+          } else if (Array.isArray(value)) {
             if (circularset.has(value)) {
               json += '"[Circular]"';
             } else {
-              save();
-              circulararray.push(value);
-              circularset.add(value);
-              holder = value;
-              indent += 1;
-              index = 0;
-              length = value.length;
-              nonempty = false;
-              state = ARRAY;
-              json += '[';
-              if (pretty) {
-                checkindent();
-              }
+              stack[stackptr++] = holder;
+              stack[stackptr++] = index;
+              stack[stackptr++] = key;
+              stack[stackptr++] = keys;
+              stack[stackptr++] = length;
+              stack[stackptr++] = nonempty;
+              stack[stackptr++] = state;
             }
-            break;
-          }
-          isObject = typeof value === 'object';
-          if (isObject) {
+            circularset.add(value);
+            holder = value;
+            index = 0;
+            length = value.length;
+            nonempty = false;
+            state = 0x03;
+            json += '[';
+            if (pretty) {
+              pushgap();
+            }
+          } else if (typeof value === 'object') {
             if (circularset.has(value)) {
               json += '"[Circular]"';
             } else {
-              save();
-              circulararray.push(value);
+              stack[stackptr++] = holder;
+              stack[stackptr++] = index;
+              stack[stackptr++] = key;
+              stack[stackptr++] = keys;
+              stack[stackptr++] = length;
+              stack[stackptr++] = nonempty;
+              stack[stackptr++] = state;
               circularset.add(value);
               holder = value;
-              indent += 1;
               index = 0;
               keys = propertyList || Object.keys(value);
               length = keys.length;
               nonempty = false;
-              state = OBJECT;
+              state = 0x02;
               json += '{';
               if (pretty) {
-                checkindent();
+                pushgap();
               }
             }
-            break;
+          } else {
+            json += JSON.stringify(value);
           }
-          json += JSON.stringify(value);
           break;
-        case ARRAY:
+        case 0x03:
           if (index >= length) {
-            circularset.delete(circulararray.pop());
-            indent = indent - 1;
-            if (pretty && nonempty) {
-              json += '\n' + indents[indent];
+            circularset.delete(value);
+            if (pretty) {
+              popgap();
+              if (nonempty) {
+                json += '\n' + indent;
+              }
             }
             json += ']';
-            state = NEXT;
+            state = 0x01;
             break;
-          }
-          value = holder[key = index++];
-          if (value != null && typeof value.toJSON === 'function') {
-            value = value.toJSON(key);
-          }
-          if (replacerFunction !== undefined) {
-            value = replacerFunction.call(holder, key, value);
           }
           if (nonempty) {
             json += ',';
@@ -236,64 +198,70 @@ function stringifyimpl(key, holder, replacerFunction, propertyList, gap, cb) {
             nonempty = true;
           }
           if (pretty) {
-            json += '\n' + indents[indent];
+            json += '\n' + indent;
           }
-          if (value === undefined) {
+          value = holder[index];
+          if (value != null && typeof value.toJSON === 'function') {
+            value = value.toJSON(index);
+          }
+          if (replacerFunction !== undefined) {
+            value = replacerFunction.call(holder, index, value);
+          }
+          index += 1;
+          if (value == null) {
             json += 'null';
-            break;
-          }
-          if (value === null) {
-            json += 'null';
-            break;
-          }
-          isArray = value.constructor === Array;
-          if (isArray) {
+          } else if (Array.isArray(value)) {
             if (circularset.has(value)) {
               json += '"[Circular]"';
             } else {
-              save();
-              circulararray.push(value);
+              stack[stackptr++] = holder;
+              stack[stackptr++] = index;
+              stack[stackptr++] = key;
+              stack[stackptr++] = keys;
+              stack[stackptr++] = length;
+              stack[stackptr++] = nonempty;
+              stack[stackptr++] = state;
               circularset.add(value);
               holder = value;
-              indent += 1;
               index = 0;
               length = value.length;
               nonempty = false;
-              state = ARRAY;
+              state = 0x03;
               json += '[';
               if (pretty) {
-                checkindent();
+                pushgap();
               }
             }
-            break;
-          }
-          isObject = typeof value === 'object';
-          if (isObject) {
+          } else if (typeof value === 'object') {
             if (circularset.has(value)) {
               json += '"[Circular]"';
             } else {
-              save();
-              circulararray.push(value);
+              stack[stackptr++] = holder;
+              stack[stackptr++] = index;
+              stack[stackptr++] = key;
+              stack[stackptr++] = keys;
+              stack[stackptr++] = length;
+              stack[stackptr++] = nonempty;
+              stack[stackptr++] = state;
               circularset.add(value);
               holder = value;
-              indent += 1;
               index = 0;
               keys = propertyList || Object.keys(value);
               length = keys.length;
               nonempty = false;
-              state = OBJECT;
+              state = 0x02;
               json += '{';
               if (pretty) {
-                checkindent();
+                pushgap();
               }
             }
-            break;
+          } else {
+            json += JSON.stringify(value);
           }
-          json += JSON.stringify(value);
           break;
       }
 
-      if (++ops > MAX_SEQUENTIAL_OPS) {
+      if (++ops > 500) {
         ops = 0;
         setImmediate(resume);
         return;

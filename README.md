@@ -45,6 +45,6 @@ See [here](https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Global
 
 ## Alternatives
 
-There are some better options in this space that may meet your requirements better.
+There are some other options in this space that may better meet your requirements.
 
 - If you are streaming a large array of small JavaScript values (e.g. rows from a Postgres table), you should use [JSONStream](https://github.com/dominictarr/JSONStream).
