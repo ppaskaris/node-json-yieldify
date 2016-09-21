@@ -1,275 +1,287 @@
 'use strict';
 
-function stringifyimpl(key, holder, replacerFunction, propertyList, gap, cb) {
-  var indent = '';
-  var index = 0;
-  var keys = [];
-  var length = 0;
-  var nonempty = false;
-  var state = 0x00;
+var BATCH_SIZE = 500;
+var CIRCULAR_JSON = '"[Circular]"';
 
-  var stack = [];
-  var stackptr = 0;
+var STATE_INIT = 0x00;
+var STATE_NEXT = 0x01;
+var STATE_OBJECT = 0x02;
+var STATE_ARRAY = 0x03;
 
-  var circularset = new WeakSet();
+var EMPTY_ARRAY = [];
+var EMPTY_OBJECT = {};
+var NOOP = function () {};
 
-  var pretty = gap.length > 0;
-  var objectdelim = pretty ? ': ' : ':';
+function Frame() {
+  this.depth = 0;
+  this.holder = EMPTY_OBJECT;
+  this.indent = '';
+  this.index = 0;
+  this.key = '';
+  this.keys = EMPTY_ARRAY;
+  this.length = 0;
+  this.nonempty = false;
+  this.state = STATE_INIT;
+}
 
-  var depth = 0;
-  var indents = [''];
-  var indentsptr = 0;
+Frame.prototype.reset = function () {
+  Frame.call(this);
+};
 
-  var json = '';
-  var ops = 0;
+function StringifyContext() {
+  this.framestack = [new Frame()];
+  this.indentstack = [''];
+  this.stackptr = 0;
+  this.stackmax = 0;
 
-  function pushgap() {
-    if (++depth > indentsptr) {
-      indentsptr += 1;
-      indents[indentsptr] = indents[indentsptr - 1] + gap;
+  this.circularset = new WeakSet();
+
+  this.propertyList = EMPTY_ARRAY;
+  this.replacerFunction = NOOP;
+
+  this.pretty = false;
+  this.delimiter = ':';
+  this.gap = '';
+
+  this.ops = 0;
+  this.json = '';
+  this.done = NOOP;
+}
+
+StringifyContext.prototype.push = function () {
+  if (this.stackptr >= this.stackmax) {
+    this.framestack.push(new Frame());
+    if (this.pretty) {
+      this.indentstack.push(this.indent + this.gap);
     }
-    indent = indents[depth];
+    this.stackptr += 1;
+    this.stackmax += 1;
+  } else {
+    this.stackptr += 1;
+  }
+};
+
+StringifyContext.prototype.pop = function () {
+  if (this.stackptr >= 0) {
+    this.frame.reset();
+    this.stackptr -= 1;
+  }
+};
+
+Object.defineProperty(StringifyContext.prototype, 'frame', {
+  get: function frameGetter() {
+    return this.framestack[this.stackptr];
+  }
+});
+
+Object.defineProperty(StringifyContext.prototype, 'indent', {
+  get: function frameGetter() {
+    return this.indentstack[this.stackptr];
+  }
+});
+
+StringifyContext.prototype.resumeInit = function () {
+  var value = this.frame.holder[this.frame.key];
+  if (value != null && typeof value.toJSON === 'function') {
+    value = value.toJSON(this.frame.key);
   }
 
-  function popgap() {
-    indent = indents[--depth];
+  if (this.replacerFunction !== NOOP) {
+    value = this.replacerFunction
+      .call(this.frame.holder, this.frame.key, value);
   }
 
-  function resume() {
-    var value;
-    for (; ;) {
-      switch (state) {
-        case 0x00:
-          value = holder[key];
-          if (value != null && typeof value.toJSON === 'function') {
-            value = value.toJSON(key);
-          }
-          if (replacerFunction !== undefined) {
-            value = replacerFunction.call(holder, key, value);
-          }
-          if (value === undefined) {
-            json = undefined;
-            state = 0x01;
-          } else if (value === null) {
-            json += 'null';
-            state = 0x01;
-          } else if (Array.isArray(value)) {
-            circularset.add(value);
-            holder = value;
-            index = 0;
-            length = value.length;
-            nonempty = false;
-            state = 0x03;
-            json += '[';
-            if (pretty) {
-              pushgap();
-            }
-          } else if (typeof value === 'object') {
-            circularset.add(value);
-            holder = value;
-            index = 0;
-            keys = propertyList || Object.keys(value);
-            length = keys.length;
-            nonempty = false;
-            state = 0x02;
-            json += '{';
-            if (pretty) {
-              pushgap();
-            }
-          } else {
-            json += JSON.stringify(value);
-            state = 0x01;
-          }
-          break;
-        case 0x01: {
-          if (stackptr <= 0) {
-            cb(null, json);
-            return;
-          }
-          state = stack[--stackptr];
-          nonempty = stack[--stackptr];
-          length = stack[--stackptr];
-          keys = stack[--stackptr];
-          key = stack[--stackptr];
-          index = stack[--stackptr];
-          holder = stack[--stackptr];
-          break;
+  this.frame.state = STATE_NEXT;
+
+  if (value === undefined) {
+    this.json = undefined;
+  } else if (value === null) {
+    this.json = 'null';
+  } else if (Array.isArray(value)) {
+    this.push();
+    this.frame.holder = value;
+    this.frame.length = value.length;
+    this.frame.state = STATE_ARRAY;
+    this.circularset.add(value);
+    this.json += '[';
+  } else if (typeof value === 'object') {
+    this.push();
+    this.frame.holder = value;
+    this.frame.keys = this.propertyList === EMPTY_ARRAY
+      ? Object.keys(value)
+      : this.propertyList;
+    this.frame.length = this.frame.keys.length;
+    this.frame.state = STATE_OBJECT;
+    this.circularset.add(value);
+    this.json += '{';
+  } else {
+    this.json += JSON.stringify(value);
+  }
+};
+
+StringifyContext.prototype.resumeArray = function () {
+  if (this.frame.index >= this.frame.length) {
+    var nonempty = this.frame.nonempty;
+    this.circularset.delete(this.frame.holder);
+    this.pop();
+    if (this.pretty && nonempty) {
+      this.json += '\n' + this.indent;
+    }
+    this.json += ']';
+    return;
+  }
+
+  var value = this.frame.holder[this.frame.index];
+  if (value != null && typeof value.toJSON === 'function') {
+    value = value.toJSON(this.frame.index);
+  }
+
+  if (this.replacerFunction !== NOOP) {
+    value = this.replacerFunction
+      .call(this.frame.holder, this.frame.index, value);
+  }
+
+  this.frame.index += 1;
+
+  if (this.frame.nonempty) {
+    this.json += ',';
+  } else {
+    this.frame.nonempty = true;
+  }
+
+  if (this.pretty) {
+    this.json += '\n' + this.indent;
+  }
+
+  if (value == null) {
+    this.json += 'null';
+  } else if (Array.isArray(value)) {
+    if (this.circularset.has(value)) {
+      this.json += CIRCULAR_JSON;
+    } else {
+      this.push();
+      this.frame.holder = value;
+      this.frame.length = value.length;
+      this.frame.state = STATE_ARRAY;
+      this.circularset.add(value);
+      this.json += '[';
+    }
+  } else if (typeof value === 'object') {
+    if (this.circularset.has(value)) {
+      this.json += CIRCULAR_JSON;
+    } else {
+      this.push();
+      this.frame.holder = value;
+      this.frame.keys = this.propertyList === EMPTY_ARRAY
+        ? Object.keys(value)
+        : this.propertyList;
+      this.frame.length = this.frame.keys.length;
+      this.frame.state = STATE_OBJECT;
+      this.circularset.add(value);
+      this.json += '{';
+    }
+  } else {
+    this.json += JSON.stringify(value);
+  }
+};
+
+StringifyContext.prototype.resumeObject = function () {
+  if (this.frame.index >= this.frame.length) {
+    var nonempty = this.frame.nonempty;
+    this.circularset.delete(this.frame.holder);
+    this.pop();
+    if (this.pretty && nonempty) {
+      this.json += '\n' + this.indent;
+    }
+    this.json += '}';
+    return;
+  }
+
+  this.frame.key = this.frame.keys[this.frame.index];
+
+  var value = this.frame.holder[this.frame.key];
+  if (value != null && typeof value.toJSON === 'function') {
+    value = value.toJSON(this.frame.key);
+  }
+
+  if (this.replacerFunction !== NOOP) {
+    value = this.replacerFunction
+      .call(this.frame.holder, this.frame.key, value);
+  }
+
+  this.frame.index += 1;
+
+  if (value === undefined) {
+    return;
+  }
+
+  if (this.frame.nonempty) {
+    this.json += ',';
+  } else {
+    this.frame.nonempty = true;
+  }
+
+  if (this.pretty) {
+    this.json += '\n' + this.indent;
+  }
+
+  this.json += JSON.stringify(this.frame.key) + this.delimiter;
+
+  if (value === null) {
+    this.json += 'null';
+  } else if (Array.isArray(value)) {
+    if (this.circularset.has(value)) {
+      this.json += CIRCULAR_JSON;
+    } else {
+      this.push();
+      this.frame.holder = value;
+      this.frame.length = value.length;
+      this.frame.state = STATE_ARRAY;
+      this.circularset.add(value);
+      this.json += '[';
+    }
+  } else if (typeof value === 'object') {
+    if (this.circularset.has(value)) {
+      this.json += CIRCULAR_JSON;
+    } else {
+      this.push();
+      this.frame.holder = value;
+      this.frame.keys = this.propertyList === EMPTY_ARRAY
+        ? Object.keys(value)
+        : this.propertyList;
+      this.frame.length = this.frame.keys.length;
+      this.frame.state = STATE_OBJECT;
+      this.circularset.add(value);
+      this.json += '{';
+    }
+  } else {
+    this.json += JSON.stringify(value);
+  }
+};
+
+function resume(ctx) {
+  while (++ctx.ops <= BATCH_SIZE) {
+    switch (ctx.frame.state) {
+      case STATE_INIT:
+        ctx.resumeInit();
+        break;
+      case STATE_NEXT:
+        if (ctx.stackptr <= 0) {
+          ctx.done(null, ctx.json);
+          return;
         }
-        case 0x02:
-          if (index >= length) {
-            circularset.delete(value);
-            if (pretty) {
-              popgap();
-              if (nonempty) {
-                json += '\n' + indent;
-              }
-            }
-            json += '}';
-            state = 0x01;
-            break;
-          }
-          key = keys[index++];
-          value = holder[key];
-          if (value != null && typeof value.toJSON === 'function') {
-            value = value.toJSON(key);
-          }
-          if (replacerFunction !== undefined) {
-            value = replacerFunction.call(holder, key, value);
-          }
-          if (value === undefined) {
-            break;
-          }
-          if (nonempty) {
-            json += ',';
-          } else {
-            nonempty = true;
-          }
-          if (pretty) {
-            json += '\n' + indent;
-          }
-          json += JSON.stringify(key) + objectdelim;
-          if (value === null) {
-            json += 'null';
-          } else if (Array.isArray(value)) {
-            if (circularset.has(value)) {
-              json += '"[Circular]"';
-            } else {
-              stack[stackptr++] = holder;
-              stack[stackptr++] = index;
-              stack[stackptr++] = key;
-              stack[stackptr++] = keys;
-              stack[stackptr++] = length;
-              stack[stackptr++] = nonempty;
-              stack[stackptr++] = state;
-            }
-            circularset.add(value);
-            holder = value;
-            index = 0;
-            length = value.length;
-            nonempty = false;
-            state = 0x03;
-            json += '[';
-            if (pretty) {
-              pushgap();
-            }
-          } else if (typeof value === 'object') {
-            if (circularset.has(value)) {
-              json += '"[Circular]"';
-            } else {
-              stack[stackptr++] = holder;
-              stack[stackptr++] = index;
-              stack[stackptr++] = key;
-              stack[stackptr++] = keys;
-              stack[stackptr++] = length;
-              stack[stackptr++] = nonempty;
-              stack[stackptr++] = state;
-              circularset.add(value);
-              holder = value;
-              index = 0;
-              keys = propertyList || Object.keys(value);
-              length = keys.length;
-              nonempty = false;
-              state = 0x02;
-              json += '{';
-              if (pretty) {
-                pushgap();
-              }
-            }
-          } else {
-            json += JSON.stringify(value);
-          }
-          break;
-        case 0x03:
-          if (index >= length) {
-            circularset.delete(value);
-            if (pretty) {
-              popgap();
-              if (nonempty) {
-                json += '\n' + indent;
-              }
-            }
-            json += ']';
-            state = 0x01;
-            break;
-          }
-          if (nonempty) {
-            json += ',';
-          } else {
-            nonempty = true;
-          }
-          if (pretty) {
-            json += '\n' + indent;
-          }
-          value = holder[index];
-          if (value != null && typeof value.toJSON === 'function') {
-            value = value.toJSON(index);
-          }
-          if (replacerFunction !== undefined) {
-            value = replacerFunction.call(holder, index, value);
-          }
-          index += 1;
-          if (value == null) {
-            json += 'null';
-          } else if (Array.isArray(value)) {
-            if (circularset.has(value)) {
-              json += '"[Circular]"';
-            } else {
-              stack[stackptr++] = holder;
-              stack[stackptr++] = index;
-              stack[stackptr++] = key;
-              stack[stackptr++] = keys;
-              stack[stackptr++] = length;
-              stack[stackptr++] = nonempty;
-              stack[stackptr++] = state;
-              circularset.add(value);
-              holder = value;
-              index = 0;
-              length = value.length;
-              nonempty = false;
-              state = 0x03;
-              json += '[';
-              if (pretty) {
-                pushgap();
-              }
-            }
-          } else if (typeof value === 'object') {
-            if (circularset.has(value)) {
-              json += '"[Circular]"';
-            } else {
-              stack[stackptr++] = holder;
-              stack[stackptr++] = index;
-              stack[stackptr++] = key;
-              stack[stackptr++] = keys;
-              stack[stackptr++] = length;
-              stack[stackptr++] = nonempty;
-              stack[stackptr++] = state;
-              circularset.add(value);
-              holder = value;
-              index = 0;
-              keys = propertyList || Object.keys(value);
-              length = keys.length;
-              nonempty = false;
-              state = 0x02;
-              json += '{';
-              if (pretty) {
-                pushgap();
-              }
-            }
-          } else {
-            json += JSON.stringify(value);
-          }
-          break;
-      }
-
-      if (++ops > 500) {
-        ops = 0;
-        setImmediate(resume);
-        return;
-      }
+        ctx.pop();
+        break;
+      case STATE_ARRAY:
+        ctx.resumeArray();
+        break;
+      case STATE_OBJECT:
+        ctx.resumeObject();
+        break;
     }
   }
-
-  process.nextTick(resume);
+  ctx.ops = 0;
+  setImmediate(resume, ctx);
 }
 
 /**
@@ -350,7 +362,23 @@ function stringify(value, replacer, space, cb) {
     gap = '';
   }
 
-  stringifyimpl('', { '': value }, replacerFunction, propertyList, gap, cb);
+
+  var ctx = new StringifyContext();
+  ctx.frame.key = '';
+  ctx.frame.holder = { '': value };
+  if (replacerFunction != null) {
+    ctx.replacerFunction = replacerFunction;
+  }
+  if (propertyList != null) {
+    ctx.propertyList = propertyList;
+  }
+  if (gap.length > 0) {
+    ctx.pretty = true;
+    ctx.delimiter = ': ';
+    ctx.gap = gap;
+  }
+  ctx.done = cb;
+  process.nextTick(resume, ctx);
 }
 
 exports.stringify = stringify;
