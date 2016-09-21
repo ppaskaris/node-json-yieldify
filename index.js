@@ -59,6 +59,7 @@ StringifyContext.prototype.push = function () {
   } else {
     this.stackptr += 1;
   }
+  return this.frame;
 };
 
 StringifyContext.prototype.pop = function () {
@@ -75,43 +76,46 @@ Object.defineProperty(StringifyContext.prototype, 'frame', {
 });
 
 Object.defineProperty(StringifyContext.prototype, 'indent', {
-  get: function frameGetter() {
+  get: function indentGetter() {
     return this.indentstack[this.stackptr];
   }
 });
 
 StringifyContext.prototype.resumeInit = function () {
-  var value = this.frame.holder[this.frame.key];
+  var frame = this.frame;
+  var holder = frame.holder;
+  var key = frame.key;
+
+  var value = holder[key];
   if (value != null && typeof value.toJSON === 'function') {
-    value = value.toJSON(this.frame.key);
+    value = value.toJSON(key);
   }
 
   if (this.replacerFunction !== NOOP) {
-    value = this.replacerFunction
-      .call(this.frame.holder, this.frame.key, value);
+    value = this.replacerFunction.call(holder, key, value);
   }
 
-  this.frame.state = STATE_NEXT;
+  frame.state = STATE_NEXT;
 
   if (value === undefined) {
     this.json = undefined;
   } else if (value === null) {
     this.json = 'null';
   } else if (Array.isArray(value)) {
-    this.push();
-    this.frame.holder = value;
-    this.frame.length = value.length;
-    this.frame.state = STATE_ARRAY;
+    frame = this.push();
+    frame.holder = value;
+    frame.length = value.length;
+    frame.state = STATE_ARRAY;
     this.circularset.add(value);
     this.json += '[';
   } else if (typeof value === 'object') {
-    this.push();
-    this.frame.holder = value;
-    this.frame.keys = this.propertyList === EMPTY_ARRAY
+    frame = this.push();
+    frame.holder = value;
+    frame.keys = this.propertyList === EMPTY_ARRAY
       ? Object.keys(value)
       : this.propertyList;
-    this.frame.length = this.frame.keys.length;
-    this.frame.state = STATE_OBJECT;
+    frame.length = frame.keys.length;
+    frame.state = STATE_OBJECT;
     this.circularset.add(value);
     this.json += '{';
   } else {
@@ -120,9 +124,13 @@ StringifyContext.prototype.resumeInit = function () {
 };
 
 StringifyContext.prototype.resumeArray = function () {
-  if (this.frame.index >= this.frame.length) {
-    var nonempty = this.frame.nonempty;
-    this.circularset.delete(this.frame.holder);
+  var frame = this.frame;
+  var holder = frame.holder;
+  var index = frame.index;
+
+  if (index >= frame.length) {
+    var nonempty = frame.nonempty;
+    this.circularset.delete(holder);
     this.pop();
     if (this.pretty && nonempty) {
       this.json += '\n' + this.indent;
@@ -131,22 +139,21 @@ StringifyContext.prototype.resumeArray = function () {
     return;
   }
 
-  var value = this.frame.holder[this.frame.index];
+  frame.index += 1;
+
+  var value = holder[index];
   if (value != null && typeof value.toJSON === 'function') {
-    value = value.toJSON(this.frame.index);
+    value = value.toJSON(index);
   }
 
   if (this.replacerFunction !== NOOP) {
-    value = this.replacerFunction
-      .call(this.frame.holder, this.frame.index, value);
+    value = this.replacerFunction.call(holder, index, value);
   }
 
-  this.frame.index += 1;
-
-  if (this.frame.nonempty) {
+  if (frame.nonempty) {
     this.json += ',';
   } else {
-    this.frame.nonempty = true;
+    frame.nonempty = true;
   }
 
   if (this.pretty) {
@@ -159,10 +166,10 @@ StringifyContext.prototype.resumeArray = function () {
     if (this.circularset.has(value)) {
       this.json += CIRCULAR_JSON;
     } else {
-      this.push();
-      this.frame.holder = value;
-      this.frame.length = value.length;
-      this.frame.state = STATE_ARRAY;
+      frame = this.push();
+      frame.holder = value;
+      frame.length = value.length;
+      frame.state = STATE_ARRAY;
       this.circularset.add(value);
       this.json += '[';
     }
@@ -170,13 +177,13 @@ StringifyContext.prototype.resumeArray = function () {
     if (this.circularset.has(value)) {
       this.json += CIRCULAR_JSON;
     } else {
-      this.push();
-      this.frame.holder = value;
-      this.frame.keys = this.propertyList === EMPTY_ARRAY
+      frame = this.push();
+      frame.holder = value;
+      frame.keys = this.propertyList === EMPTY_ARRAY
         ? Object.keys(value)
         : this.propertyList;
-      this.frame.length = this.frame.keys.length;
-      this.frame.state = STATE_OBJECT;
+      frame.length = frame.keys.length;
+      frame.state = STATE_OBJECT;
       this.circularset.add(value);
       this.json += '{';
     }
@@ -186,9 +193,13 @@ StringifyContext.prototype.resumeArray = function () {
 };
 
 StringifyContext.prototype.resumeObject = function () {
-  if (this.frame.index >= this.frame.length) {
-    var nonempty = this.frame.nonempty;
-    this.circularset.delete(this.frame.holder);
+  var frame = this.frame;
+  var holder = frame.holder;
+  var index = frame.index;
+
+  if (index >= frame.length) {
+    var nonempty = frame.nonempty;
+    this.circularset.delete(holder);
     this.pop();
     if (this.pretty && nonempty) {
       this.json += '\n' + this.indent;
@@ -197,35 +208,33 @@ StringifyContext.prototype.resumeObject = function () {
     return;
   }
 
-  this.frame.key = this.frame.keys[this.frame.index];
+  frame.index += 1;
 
-  var value = this.frame.holder[this.frame.key];
+  var key = frame.keys[index];
+  var value = holder[key];
   if (value != null && typeof value.toJSON === 'function') {
-    value = value.toJSON(this.frame.key);
+    value = value.toJSON(key);
   }
 
   if (this.replacerFunction !== NOOP) {
-    value = this.replacerFunction
-      .call(this.frame.holder, this.frame.key, value);
+    value = this.replacerFunction.call(holder, key, value);
   }
-
-  this.frame.index += 1;
 
   if (value === undefined) {
     return;
   }
 
-  if (this.frame.nonempty) {
+  if (frame.nonempty) {
     this.json += ',';
   } else {
-    this.frame.nonempty = true;
+    frame.nonempty = true;
   }
 
   if (this.pretty) {
     this.json += '\n' + this.indent;
   }
 
-  this.json += JSON.stringify(this.frame.key) + this.delimiter;
+  this.json += JSON.stringify(key) + this.delimiter;
 
   if (value === null) {
     this.json += 'null';
@@ -233,10 +242,10 @@ StringifyContext.prototype.resumeObject = function () {
     if (this.circularset.has(value)) {
       this.json += CIRCULAR_JSON;
     } else {
-      this.push();
-      this.frame.holder = value;
-      this.frame.length = value.length;
-      this.frame.state = STATE_ARRAY;
+      frame = this.push();
+      frame.holder = value;
+      frame.length = value.length;
+      frame.state = STATE_ARRAY;
       this.circularset.add(value);
       this.json += '[';
     }
@@ -244,13 +253,13 @@ StringifyContext.prototype.resumeObject = function () {
     if (this.circularset.has(value)) {
       this.json += CIRCULAR_JSON;
     } else {
-      this.push();
-      this.frame.holder = value;
-      this.frame.keys = this.propertyList === EMPTY_ARRAY
+      frame = this.push();
+      frame.holder = value;
+      frame.keys = this.propertyList === EMPTY_ARRAY
         ? Object.keys(value)
         : this.propertyList;
-      this.frame.length = this.frame.keys.length;
-      this.frame.state = STATE_OBJECT;
+      frame.length = frame.keys.length;
+      frame.state = STATE_OBJECT;
       this.circularset.add(value);
       this.json += '{';
     }
