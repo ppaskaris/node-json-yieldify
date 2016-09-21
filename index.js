@@ -13,9 +13,7 @@ var EMPTY_OBJECT = {};
 var NOOP = function () {};
 
 function Frame() {
-  this.depth = 0;
   this.holder = EMPTY_OBJECT;
-  this.indent = '';
   this.index = 0;
   this.key = '';
   this.keys = EMPTY_ARRAY;
