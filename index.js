@@ -93,6 +93,16 @@ StringifyContext.prototype.resumeInit = function () {
     value = this.replacerFunction.call(holder, key, value);
   }
 
+  if (typeof value === 'object') {
+    if (value instanceof Number) {
+      value = Number(value);
+    } else if (value instanceof String) {
+      value = String(value);
+    } else if (value instanceof Boolean) {
+      value = value.valueOf();
+    }
+  }
+
   frame.state = STATE_NEXT;
 
   if (value === undefined) {
@@ -146,6 +156,16 @@ StringifyContext.prototype.resumeArray = function () {
 
   if (this.replacerFunction !== NOOP) {
     value = this.replacerFunction.call(holder, index, value);
+  }
+
+  if (typeof value === 'object') {
+    if (value instanceof Number) {
+      value = Number(value);
+    } else if (value instanceof String) {
+      value = String(value);
+    } else if (value instanceof Boolean) {
+      value = value.valueOf();
+    }
   }
 
   if (frame.nonempty) {
@@ -220,6 +240,16 @@ StringifyContext.prototype.resumeObject = function () {
 
   if (value === undefined) {
     return;
+  }
+
+  if (typeof value === 'object') {
+    if (value instanceof Number) {
+      value = Number(value);
+    } else if (value instanceof String) {
+      value = String(value);
+    } else if (value instanceof Boolean) {
+      value = value.valueOf();
+    }
   }
 
   if (frame.nonempty) {

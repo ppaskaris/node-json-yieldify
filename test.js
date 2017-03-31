@@ -26,7 +26,7 @@ describe('native parity', () => {
   }
 
   function testAll(values, cb) {
-    Async.each(test, values, cb);
+    Async.each(values, test, cb);
   }
 
   it('handles undefined', (cb) => {
