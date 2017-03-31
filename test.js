@@ -73,7 +73,11 @@ describe('native parity', () => {
   const complexObject = {
     array: [1, 2, 3],
     string: 'greetings',
+    stringObject: new String('hello'),
     number: 42,
+    numberObject: new Number(1),
+    boolean: false,
+    booleanObject: new Boolean(true),
     goofyNumbers: [0, -0, Infinity, -Infinity, NaN, 9e-56],
     other: {
       date: new Date(),
@@ -85,7 +89,7 @@ describe('native parity', () => {
   };
 
   const complexArray = [
-    [new Number(1), new String('hello'), new Boolean(56), new Date()],
+    [new Number(1), new String('hello'), new Boolean(true), new Date()],
     'greetings',
     42,
     [0, -0, Infinity, -Infinity, NaN, 9e-56],
