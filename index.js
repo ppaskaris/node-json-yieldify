@@ -85,8 +85,11 @@ StringifyContext.prototype.resumeInit = function () {
   var key = frame.key;
 
   var value = holder[key];
-  if (value != null && typeof value.toJSON === 'function') {
-    value = value.toJSON(key);
+  if (value != null) {
+    var toJSON = value.toJSON;
+    if (typeof toJSON === 'function') {
+      value = toJSON.call(value, key);
+    }
   }
 
   if (this.replacerFunction !== NOOP) {
@@ -150,8 +153,11 @@ StringifyContext.prototype.resumeArray = function () {
   frame.index += 1;
 
   var value = holder[index];
-  if (value != null && typeof value.toJSON === 'function') {
-    value = value.toJSON(index);
+  if (value != null) {
+    var toJSON = value.toJSON;
+    if (typeof toJSON === 'function') {
+      value = toJSON.call(value, index);
+    }
   }
 
   if (this.replacerFunction !== NOOP) {
@@ -230,8 +236,11 @@ StringifyContext.prototype.resumeObject = function () {
 
   var key = frame.keys[index];
   var value = holder[key];
-  if (value != null && typeof value.toJSON === 'function') {
-    value = value.toJSON(key);
+  if (value != null) {
+    var toJSON = value.toJSON;
+    if (typeof toJSON === 'function') {
+      value = toJSON.call(value, key);
+    }
   }
 
   if (this.replacerFunction !== NOOP) {

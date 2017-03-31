@@ -61,12 +61,12 @@ describe('native parity', () => {
     testAll([{}, { a: 42 }, { a: 'greetings', b: undefined, c: 42 }], cb);
   });
 
-  function Greetings(message) {
-    this.message = message;
-    this.shout = message.toUpperCase() + '!';
-  }
-
   it('handles constructors', (cb) => {
+    function Greetings(message) {
+      this.message = message;
+      this.shout = message.toUpperCase() + '!';
+    }
+
     test(new Greetings('hello'), cb);
   });
 
@@ -166,6 +166,27 @@ describe('native parity', () => {
     const buffer = new Buffer(4096);
     buffer.fill(gibberish());
     test(buffer, cb);
+  });
+
+  it('handles toJSON that changes', (cb) => {
+    class WeirdToJSON {
+      constructor() {
+        this._toJsonVersion = 0;
+      }
+      get toJSON() {
+        var toJsonVersion = ++this._toJsonVersion;
+        return function weirdToJSON(key) {
+          return `${toJsonVersion}: ${key}`;
+        };
+      }
+    }
+
+    JsonYieldify.stringify(new WeirdToJSON(), (err, json1) => {
+      expect(err).to.not.exist;
+      const json2 = JSON.stringify(new WeirdToJSON());
+      expect(json1).to.equal(json2);
+      cb();
+    });
   });
 
 });
